@@ -109,27 +109,14 @@ export const createReview = async (req, res, next) => {
         return next(error);
     }
 
-    try {
-        const newReview = new Review({
-                food: food?.trim(),
-                image: file ? file.filename : null,  // Will store filename or null if no file
-                address: address?.trim(),
-                area: area?.trim(),
-                location: location?.trim(),
-                rating,
-                comment: comment?.trim(),
-                userId,              
+    if (!file) {
+        return res.status(400).json({
+            success: false,
+            message: 'No File Uploaded',
         });
+    }
 
-        const savedReview = await newReview.save();
-
-        if (!file) {
-            return res.status(404).json({
-                success: false,
-                message: 'No File Uploaded',
-            });
-        }
-
+    try {
         const bucket = new GridFSBucket(conn.db, {
             bucketName: 'uploads',
         });
@@ -145,19 +132,38 @@ export const createReview = async (req, res, next) => {
         readableStream.pipe(uploadStream);
 
         uploadStream.on('finish', async () => {
-            savedReview.image = uploadStream.id;
-            await savedReview.save();
+            try {
+                const newReview = await Review.create({
+                    food: food?.trim(),
+                    image: uploadStream.id, // Save the uploaded file's ObjectId
+                    address: address?.trim(),
+                    area: area?.trim(),
+                    location: location?.trim(),
+                    rating,
+                    comment: comment?.trim(),
+                    userId,
+                });
 
-            return res.status(201).json({
-                success: true,
-                message: 'Review saved successfully',
-                data: savedReview,
-            });
+                return res.status(201).json({
+                    success: true,
+                    message: 'Review created successfully',
+                    data: newReview,
+                });
+
+            } catch (error) {
+                next(error);
+            }
         });
+
+        uploadStream.on('error', (err) => {
+            next(err);
+        });
+
     } catch (error) {
         next(error);
     }
 };
+
 
 
 export const getReviewByUser = async (req, res, next) => {
